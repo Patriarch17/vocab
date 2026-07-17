@@ -114,6 +114,8 @@ select.gapsel{font:600 15px/1.2 inherit;padding:4px 8px;border-radius:8px;border
   .stage{min-height:calc(100dvh - 215px)}
 }
 @supports (min-height:100dvh){.stage{min-height:calc(100dvh - 230px)}}
+.actionCol{display:flex;flex-direction:column;gap:10px;margin-top:16px;max-width:460px}
+.actionCol .btn{width:100%}
 .hidden{display:none!important}
 a{color:var(--acc)}
 </style>
@@ -194,12 +196,28 @@ function isMulti(k){return IT(k).multi_sense&&IT(k).sense_plan;}
 const slugA=s=>norm(s).replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,60)||'x';
 let VOICES=[];function loadVoices(){VOICES=speechSynthesis.getVoices().filter(v=>v.lang&&v.lang.startsWith('en'));}
 if('speechSynthesis' in window){loadVoices();speechSynthesis.onvoiceschanged=loadVoices;}
-function speak(text){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);
-  let v=VOICES.find(x=>x.name===S.settings.voiceName)||VOICES.find(x=>x.lang==='en-GB')||VOICES.find(x=>x.lang.startsWith('en-GB'))||VOICES[0];
-  if(v)u.voice=v;u.lang=(v&&v.lang)||'en-GB';u.rate=1;speechSynthesis.speak(u);}catch(e){}}
+let AUDIO_DIR=null; /* есть ли рядом папка audio с записями */
+try{fetch('audio/banter.mp3',{method:'HEAD'}).then(r=>{AUDIO_DIR=!!r.ok;}).catch(()=>{AUDIO_DIR=false;});}catch(e){AUDIO_DIR=false;}
+let _primed=false;
+function primeSpeech(){ /* iOS разрешает синтез только после «прогрева» жестом */
+  if(_primed||!('speechSynthesis' in window))return;_primed=true;
+  try{const u=new SpeechSynthesisUtterance(' ');u.volume=0;speechSynthesis.speak(u);}catch(e){}}
+document.addEventListener('touchend',primeSpeech,{once:true,capture:true});
+document.addEventListener('click',primeSpeech,{once:true,capture:true});
+function speak(text){try{
+  const synth=speechSynthesis;
+  if(synth.speaking||synth.pending)synth.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  let v=VOICES.find(x=>x.name===S.settings.voiceName)||VOICES.find(x=>x.lang==='en-GB')||VOICES.find(x=>x.lang&&x.lang.startsWith('en-GB'))||VOICES.find(x=>x.lang&&x.lang.startsWith('en'));
+  if(v)u.voice=v;u.lang=(v&&v.lang)||'en-GB';u.rate=1;
+  synth.speak(u);
+  setTimeout(()=>{try{if(synth.paused)synth.resume();}catch(e){}},150);
+}catch(e){}}
 function playAudio(key,exIdx,text){
-  const base='audio/'+slugA(key)+(exIdx!=null?('_ex'+(exIdx+1)):'')+'.mp3';
-  const a=new Audio(base);a.onerror=()=>speak(text);a.play().catch(()=>speak(text));
+  if(AUDIO_DIR===true){
+    const base='audio/'+slugA(key)+(exIdx!=null?('_ex'+(exIdx+1)):'')+'.mp3';
+    const a=new Audio(base);a.onerror=()=>speak(text);a.play().catch(()=>speak(text));
+  } else { speak(text); } /* синхронно внутри касания — требование iOS */
 }
 function soundBtn(key,exIdx,text){const b=el('button','sound','&#128266;');b.title='Произношение (UK)';b.onclick=e=>{e.stopPropagation();playAudio(key,exIdx,text);};return b;}
 
@@ -573,9 +591,9 @@ function renderIntroCard(k,idx,total,box,doneCb){
 function renderAudioTask(k,box,doneCb){
   const it=IT(k);const started=Date.now();
   box.appendChild(el('h3','','Прослушайте и выберите, что прозвучало'));
-  const play=el('button','btn big','&#128266; Прослушать ещё раз');
-  play.onclick=()=>playAudio(k,null,it.head);box.appendChild(play);
-  setTimeout(()=>playAudio(k,null,it.head),350);
+  const play=el('button','btn pri big','&#128266; Прослушать');
+  play.onclick=()=>{playAudio(k,null,it.head);play.innerHTML='&#128266; Прослушать ещё раз';};
+  box.appendChild(play);
   const mates=unitOf(k).items.filter(x=>x!==k);
   const opts=shuffle([it.head, ...pick(mates,5).map(x=>IT(x).head)]);
   const os=el('div');
@@ -864,14 +882,16 @@ function viewToday(app){
    '<div class="stat"><span class="n">'+due+'</span><span class="l">повторений в очереди</span></div>'+
    '<div class="stat"><span class="n">'+day(d).done+'</span><span class="l">заданий сделано</span></div>'+
    '<div class="stat"><span class="n">'+(day(d).min||0)+'</span><span class="l">минут сегодня</span></div>'));
+  const acts=el('div','actionCol');
   if(S.meta.paused&&S.meta.paused.tasks&&S.meta.paused.i<S.meta.paused.tasks.length){
     const pz=S.meta.paused;
     const rez=el('button','btn pri big','Продолжить занятие (шаг '+(pz.i+1)+' из '+pz.tasks.length+')');
     rez.onclick=()=>{SES={tasks:pz.tasks,i:pz.i,errors:pz.errors||[],count:pz.count||0,okc:pz.okc||0,t0:Date.now(),unitFlow:pz.unitFlow,orderA:pz.orderA,usedA:pz.usedA};showSession();};
-    c.appendChild(rez);
+    acts.appendChild(rez);
   }
-  const go=el('button','btn pri big','Повторения и закрепление'+(due?' ('+due+')':''));
-  go.onclick=startSession;c.appendChild(go);
+  const go=el('button','btn'+((S.meta.paused&&S.meta.paused.tasks&&S.meta.paused.i<S.meta.paused.tasks.length)?'':' pri')+' big','Повторение и закрепление'+(due?' ('+due+')':''));
+  go.onclick=startSession;acts.appendChild(go);
+  c.appendChild(acts);
   const em=el('div','fb ok hidden','Все повторения на сегодня выполнены. Можно перейти к новой пачке.');
   em.id='emptyMsg';c.appendChild(em);
   if(due>60)c.appendChild(el('div','fb warn','Накопилось много повторений. Рекомендуем выполнить их до начала новой пачки.'));
