@@ -139,6 +139,18 @@ select.gapsel{font:600 15px/1.2 inherit;padding:6px 10px;border-radius:10px;bord
   .pair .opt{font-size:13.5px;padding:10px 8px}
   .hero-title{font-size:24px}
 }
+.stage{align-items:stretch}
+.stage .badge{align-self:flex-start;margin-bottom:4px}
+.qbody{flex:1;display:flex;flex-direction:column;justify-content:center;gap:6px;padding:8px 0}
+.qbody .headword{font-size:44px}
+.qbody .opt{padding:16px 18px;font-size:16.5px}
+.soundBig{width:84px;height:84px;border-radius:50%;border:0;background:var(--grad);color:#fff;font-size:30px;cursor:pointer;box-shadow:0 10px 26px -8px rgba(79,124,255,.6);transition:.16s;align-self:center}
+.soundBig:hover{transform:scale(1.05)}
+.soundHint{align-self:center;color:var(--mut);font-size:13px;margin-top:8px}
+.exRow{display:flex;gap:14px;align-items:center;justify-content:space-between}
+.exRow .extext{flex:1}
+.pack .desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:38px}
+.pack .btn{margin-top:auto}
 .hidden{display:none!important}
 a{color:var(--acc)}
 </style>
@@ -165,7 +177,11 @@ const IRREG={'give':['gave','given'],'pay':['paid'],'keep':['kept'],'read':['rea
 const STOPW=new Set(['a','an','the','to','of','your','someone','somebody','sth','be','my','us','it','that','s','me','oneself']);
 const headToks=h=>norm(h.replace(/\(.*?\)/g,'').replace(/\//g,' ')).split(/[^a-z'\-\*]+/).filter(t=>t&&!STOPW.has(t));
 function wordMatch(tok,w){w=w.replace(/-/g,'');tok=tok.replace(/-/g,'');
-  if(tok.length<=3)return w===tok||(IRREG[tok]||[]).includes(w);
+  if(tok.length<=3){
+    if(w===tok||(IRREG[tok]||[]).includes(w))return true;
+    if(w.startsWith(tok)&&['s','es','ed','ing'].includes(w.slice(tok.length)))return true; /* pays, vows, summing */
+    return false;
+  }
   const stem=tok.slice(0,Math.max(4,tok.length-2));
   if(w.startsWith(stem)&&Math.abs(w.length-tok.length)<=5)return true;
   return (IRREG[tok]||[]).includes(w);}
@@ -650,9 +666,13 @@ function renderIntroCard(k,idx,total,box,doneCb){
     else box.appendChild(el('div','trans mut','2. '+esc(g)+' — будет введено позже, отдельно'));});}
   else box.appendChild(el('div','trans b',esc(it.rus.join('; '))));
   if(it.collocations&&it.collocations.length)box.appendChild(el('div','small mut','Сочетания: '+esc(it.collocations.slice(0,3).join(' · '))));
-  exsOf(k,0).slice(0,2).forEach(ex=>{const c=el('div','card');
-    c.appendChild(el('div','sentence',esc(ex.en)));c.appendChild(el('div','mut small',esc(ex.ru)));
-    c.appendChild(soundBtn(k,IT(k).examples.indexOf(ex),ex.en));box.appendChild(c);});
+  exsOf(k,0).slice(0,2).forEach(ex=>{const c=el('div','card exRow');
+    const txt=el('div','extext');
+    txt.appendChild(el('div','sentence',esc(ex.en)));
+    txt.appendChild(el('div','mut small',esc(ex.ru)));
+    c.appendChild(txt);
+    c.appendChild(soundBtn(k,IT(k).examples.indexOf(ex),ex.en));
+    box.appendChild(c);});
   const row=el('div','row actions');
   const next=el('button','btn pri big','Дальше ⏎');next.onclick=()=>doneCb({});
   const know=el('button','btn ghost','Уже знаю — в архив');
@@ -663,9 +683,12 @@ function renderIntroCard(k,idx,total,box,doneCb){
 function renderAudioTask(k,box,doneCb){
   const it=IT(k);const started=Date.now();
   box.appendChild(el('h3','','Прослушайте и выберите, что прозвучало'));
-  const play=el('button','btn pri big','&#128266; Прослушать');
-  play.onclick=()=>{playAudio(k,null,it.head);play.innerHTML='&#128266; Прослушать ещё раз';};
+  const play=el('button','soundBig','&#128266;');
+  play.title='Прослушать';
+  play.onclick=()=>{playAudio(k,null,it.head);hint.textContent='Прослушать ещё раз — по кнопке';};
   box.appendChild(play);
+  const hint=el('div','soundHint','Нажмите, чтобы прослушать');
+  box.appendChild(hint);
   const mates=unitOf(k).items.filter(x=>x!==k);
   const opts=shuffle([it.head, ...pick(mates,5).map(x=>IT(x).head)]);
   const os=el('div');
@@ -821,7 +844,9 @@ function showSession(){
   /* чекпоинт для возобновления */
   S.meta.paused={tasks:SES.tasks,i:SES.i,errors:SES.errors,count:SES.count,okc:SES.okc,unitFlow:SES.unitFlow||null,orderA:SES.orderA||null,usedA:SES.usedA||null};save();
   const centerKinds=new Set(['learn','review','relearn','introCard','audio','unitDone']);
-  const box=el('div','card stage'+(centerKinds.has(t.kind)?' center':''));app.appendChild(box);
+  const box=el('div','card stage');app.appendChild(box);
+  let target=box;
+  if(centerKinds.has(t.kind)){/* бейдж сверху, содержимое по центру оставшегося пространства */}
   const done=res=>{
     if(res&&res.redo){showSession();return;}
     const pushRelearn=task=>{ /* возврат ошибки — в конец текущего этапа */
@@ -849,11 +874,12 @@ function showSession(){
   };
   const kindLabel={review:'Повторение',learn:'Закрепление',relearn:'Возврат ошибки',introCard:'Новое слово',match5:'Сопоставление',blockA:'Предложения · блок 1',blockB:'Предложения · блок 2',audio:'На слух',story:'Итоговый тест',unitDone:'Итог'};
   box.appendChild(el('div','badge',kindLabel[t.kind]||''));
-  if(t.kind==='introCard')renderIntroCard(t.k,t.idx,t.total,box,done);
+  if(centerKinds.has(t.kind)){target=el('div','qbody');box.appendChild(target);}
+  if(t.kind==='introCard')renderIntroCard(t.k,t.idx,t.total,target,done);
   else if(t.kind==='match5'){const alive=t.keys.filter(k=>ST(k).st==='learning');
     if(alive.length>=3)renderMatch(alive,box,done);else done({});}
   else if(t.kind==='blockA')renderBlockA(t.unit,box,done);
-  else if(t.kind==='audio')renderAudioTask(t.k,box,done);
+  else if(t.kind==='audio')renderAudioTask(t.k,target,done);
   else if(t.kind==='blockB'){renderBlockA(t.unit,box,done,2);}
   else if(t.kind==='gradRest'){
     const u=PACK.units.find(x=>x.unit===t.unit);const d=todayStr();
@@ -862,13 +888,13 @@ function showSession(){
       graduate(k,d,!!lastToday&&lastToday.r!=='wrong');}
     save();done({});}
   else if(t.kind==='story')renderStory(t.unit,box,done);
-  else if(t.kind==='unitDone')renderUnitDone(t.unit,box);
+  else if(t.kind==='unitDone')renderUnitDone(t.unit,target);
   else if(t.kind==='relearn'){
     const it=IT(t.k);const c=el('div');c.appendChild(el('div','headword',esc(it.head)));
     c.appendChild(el('div','trans',esc(glossFor(t.k,t.si||0))));
-    const ex=exsOf(t.k,t.si||0)[0];c.appendChild(el('div','mut small',esc(ex.en)));box.appendChild(c);
-    const n=el('button','btn pri','Понятно, дальше ⏎');n.onclick=()=>done({});box.appendChild(n);box._next=n;box.dataset.answered='1';}
-  else renderTask(t,box,done);
+    const ex=exsOf(t.k,t.si||0)[0];c.appendChild(el('div','mut small',esc(ex.en)));target.appendChild(c);
+    const n=el('button','btn pri','Понятно, дальше ⏎');n.onclick=()=>done({});target.appendChild(n);target._next=n;target.dataset.answered='1';}
+  else renderTask(t,target,done);
 }
 function renderUnitDone(unitNo,box){
   addMinutes();
@@ -954,7 +980,7 @@ window.addEventListener('popstate',()=>{
 });
 function pushNav(){try{history.pushState({v:'s'},'');}catch(e){}}
 document.addEventListener('keydown',e=>{
-  if(!SES||SES._done)return;const box=document.querySelector('.card[data-answered]');
+  if(!SES||SES._done)return;const box=document.querySelector('[data-answered]');
   if(e.key==='Enter'&&box&&box._next){e.preventDefault();box._next.click();return;}
   if(/^[1-9]$/.test(e.key)){const opts=document.querySelectorAll('.opt');const i=+e.key-1;
     if(opts[i]&&!document.querySelector('.card[data-answered]'))opts[i].click();}
@@ -973,10 +999,7 @@ function render(view){
   [['today','Сегодня'],['dict','Словарь'],['prog','Прогресс'],['data','Данные']].forEach(([v,t])=>{
     const b=el('button','tab'+(view===v?' on':''),t);b.onclick=()=>render(v);bar.appendChild(b);});
   bar.appendChild(el('div','spacer'));
-  const th=el('button','tab','◐');th.title='Тема';th.onclick=()=>{
-    S.settings.theme=(S.settings.theme==='light')?'dark':'light';
-    document.documentElement.setAttribute('data-theme',S.settings.theme);save();};
-  bar.appendChild(th);app.appendChild(bar);
+  app.appendChild(bar);
   if(view==='today')viewToday(app);else if(view==='dict')viewDict(app);
   else if(view==='prog')viewProg(app);else if(view==='data')viewData(app);
 }
@@ -1029,7 +1052,7 @@ function viewToday(app){
     const pc=el('div','pack '+st.code);
     pc.appendChild(el('div','num',u.unit));
     pc.appendChild(el('div','b','Пачка '+u.unit));
-    pc.appendChild(el('div','small mut',esc(u.title)));
+    pc.appendChild(el('div','small mut desc',esc(u.title)));
     const frac=st.stageFrac!=null?st.stageFrac:(done/u.items.length);
     const bar=el('div','pbar');bar.appendChild(el('div'));bar.firstChild.style.width=(frac*100)+'%';pc.appendChild(bar);
     pc.appendChild(el('div','small mut',st.label));
@@ -1256,23 +1279,7 @@ function viewData(app){
   c3.appendChild(el('div','small mut','Пак: '+PACK.pack_id+' · единиц: '+Object.keys(PACK.items).length+' · юнитов: '+PACK.units.length+' · схема прогресса v1.<br>Горячие клавиши: <kbd>1–6</kbd> — выбор варианта, <kbd>Enter</kbd> — далее.'));
   app.appendChild(c3);
 }
-/* ============ ОНБОРДИНГ ============ */
-function onboarding(){
-  const steps=[
-    ['Как устроено обучение','Материал разбит на пачки по 20 слов. Новая пачка проходится за одну сессию из пяти этапов: знакомство, узнавание, предложения с пропусками, восприятие на слух и письменный блок. Затем слова закрепляются повторениями по расписанию.'],
-    ['Отвечайте честно','Кнопка «Не уверен» — полезный сигнал: слово вернётся раньше. Ошибки — часть процесса: такое слово будет появляться чаще. Слово считается выученным только после серии успешных ответов в разных форматах.'],
-    ['Повторения по расписанию','Интервалы между показами растут: 1 → 3 → 7 → 14 → 30 → 60 → 120 дней. На длинные интервалы слово переходит только после письменных ответов. Кнопка «Уже знаю» отправляет слово в архив, не занимая ваше время.']];
-  let i=0;const m=el('div','modal');const c=el('div','card');m.appendChild(c);
-  function draw(){c.innerHTML='';const [t,txt]=steps[i];
-    c.appendChild(el('h2','',t));c.appendChild(el('div','',txt));
-    const r=el('div','row');
-    const n=el('button','btn pri',i<steps.length-1?'Дальше':'Начать');
-    n.onclick=()=>{i++;if(i>=steps.length){S.meta.firstRun=false;save();m.remove();}else draw();};
-    r.appendChild(n);c.appendChild(r);}
-  draw();document.body.appendChild(m);
-}
 /* ============ СТАРТ ============ */
 loadS();document.documentElement.setAttribute('data-theme',S.settings.theme==='light'?'light':'dark');render('today');
-if(S.meta.firstRun)onboarding();
 
 </script></body></html>
