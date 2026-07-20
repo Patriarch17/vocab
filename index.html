@@ -93,7 +93,8 @@ select.gapsel{font:600 15px/1.2 inherit;padding:4px 8px;border-radius:8px;border
 .stage{min-height:calc(100vh - 230px);display:flex;flex-direction:column}
 .stage .actions{margin-top:auto;padding-top:14px}
 .stepper{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;gap:4px;justify-content:center;padding:9px 10px;z-index:5;flex-wrap:wrap}
-.stepper .step{font-size:12.5px;font-weight:600;color:var(--mut);padding:5px 11px;border-radius:8px;background:var(--soft)}
+.stepper .step{font-size:12.5px;font-weight:600;color:var(--mut);padding:5px 11px;border-radius:8px;background:var(--soft);cursor:pointer;user-select:none}
+.stepper .step:hover{color:var(--ink);background:color-mix(in srgb,var(--acc) 10%,var(--soft))}
 .stepper .step.cur{background:var(--acc);color:#fff}
 .stepper .step.done{color:var(--ink);background:color-mix(in srgb,var(--acc) 18%,var(--soft))}
 .headword{font-size:34px}
@@ -715,7 +716,7 @@ function startUnitDay1(unitNo){
   shuffle(fresh).forEach(k=>tasks.push({kind:'audio',k,stage:4}));
   /* Этап 5: второй блок предложений (ввод с клавиатуры) */
   tasks.push({kind:'blockBBuild',unit:unitNo,stage:5});
-  tasks.push({kind:'unitDone',unit:unitNo,stage:5});
+  tasks.push({kind:'unitDone',unit:unitNo});
   SES={tasks,i:0,errors:[],t0:Date.now(),count:0,okc:0,unitFlow:unitNo};
   /* регистрация пачки */
   for(const k of fresh){ST(k).st='learning';ST(k).intro=ST(k).intro||todayStr();ST(k).learn=ST(k).learn||{ok:0,formats:[],prod:0,days:[]};}
@@ -732,6 +733,18 @@ function startSession(){ /* повторения + конвейер закреп
   SES={tasks,i:0,errors:[],t0:Date.now(),count:0,okc:0};
   showSession();
 }
+
+function jumpToStage(n){
+  if(!SES||!SES.unitFlow)return;
+  let idx=-1;
+  if(n===5){
+    if(!SES.blockBBuilt)idx=SES.tasks.findIndex(t=>t.kind==='blockBBuild');
+    else idx=SES.tasks.findIndex(t=>t.stage===5&&t.kind!=='blockBBuild');
+  } else {
+    idx=SES.tasks.findIndex(t=>t.stage===n);
+  }
+  if(idx>=0){SES.i=idx;showSession();}
+}
 function showSession(){
   const app=$('#app');app.innerHTML='';
   const total=SES.tasks.length;
@@ -742,9 +755,12 @@ function showSession(){
   const pb=el('div','pbar');pb.appendChild(el('div','',''));pb.firstChild.style.width=(SES.i/total*100)+'%';app.appendChild(pb);
   if(SES.unitFlow){
     const names=['Знакомство','Узнавание','Блок 1','На слух','Блок 2'];
+    const a=S.meta.activeUnits.find(x=>x.unit===SES.unitFlow);
+    const doneSt=(a&&a.stagesDone)||[];
     const cur=(SES.tasks[Math.min(SES.i,total-1)]||{}).stage||1;
     const stp=el('div','stepper');
-    names.forEach((n,i)=>{const s=el('span','step'+(i+1<cur?' done':'')+(i+1===cur?' cur':''),n);stp.appendChild(s);});
+    names.forEach((n,i)=>{const s=el('span','step'+(doneSt.includes(i+1)?' done':'')+(i+1===cur?' cur':''),n);
+      s.title='Перейти к этапу';s.onclick=()=>jumpToStage(i+1);stp.appendChild(s);});
     app.appendChild(stp);
   }
   if(SES.i>=total){return sessionEnd(app);}
@@ -755,11 +771,23 @@ function showSession(){
   S.meta.paused={tasks:SES.tasks,i:SES.i,errors:SES.errors,count:SES.count,okc:SES.okc,unitFlow:SES.unitFlow||null,orderA:SES.orderA||null,usedA:SES.usedA||null};save();const box=el('div','card stage');app.appendChild(box);
   const done=res=>{
     if(res&&res.redo){showSession();return;}
+    const pushRelearn=task=>{ /* возврат ошибки — до итогового экрана, не после */
+      const di=SES.tasks.findIndex(x=>x.kind==='unitDone');
+      if(di>=0)SES.tasks.splice(di,0,task);else SES.tasks.push(task);
+    };
     if(t.kind==='learn'||t.kind==='review'){
       SES.count++;if(res&&!res.wrong)SES.okc++;
       if(res&&res.wrong&&res.k){SES.errors.push({k:res.k,si:res.si||0});
-        SES.tasks.push({kind:'relearn',k:res.k,si:res.si||0,format:'mcq_rev'});}}
-    if(res&&res.wrong&&t.kind==='audio')SES.tasks.push({kind:'relearn',k:res.k,si:0,format:'mcq_rev'});
+        pushRelearn({kind:'relearn',k:res.k,si:res.si||0,format:'mcq_rev'});}}
+    if(res&&res.wrong&&t.kind==='audio')pushRelearn({kind:'relearn',k:res.k,si:0,format:'mcq_rev'});
+    /* этап пройден, когда выполнена его последняя задача */
+    if(SES.unitFlow&&t.stage){
+      const nxt=SES.tasks[SES.i+1];
+      if(!nxt||nxt.stage!==t.stage){
+        const a=S.meta.activeUnits.find(x=>x.unit===SES.unitFlow);
+        if(a){a.stagesDone=a.stagesDone||[];if(!a.stagesDone.includes(t.stage))a.stagesDone.push(t.stage);save();}
+      }
+    }
     SES.i++;showSession();
   };
   const kindLabel={review:'Повторение',learn:'Закрепление',relearn:'Возврат ошибки',introCard:'Новое слово',match5:'Сопоставление',blockA:'Предложения · блок 1',audio:'На слух',story:'Итоговый тест',unitDone:'Итог'};
@@ -769,7 +797,7 @@ function showSession(){
     if(alive.length>=3)renderMatch(alive,box,done);else done({});}
   else if(t.kind==='blockA')renderBlockA(t.unit,box,done);
   else if(t.kind==='audio')renderAudioTask(t.k,box,done);
-  else if(t.kind==='blockBBuild'){buildBlockB(t.unit);done({});}
+  else if(t.kind==='blockBBuild'){if(!SES.blockBBuilt){buildBlockB(t.unit);SES.blockBBuilt=true;}done({});}
   else if(t.kind==='gradRest'){
     const u=PACK.units.find(x=>x.unit===t.unit);const d=todayStr();
     for(const k of u.items)if(ST(k).st==='learning'){
@@ -808,8 +836,11 @@ function buildBlockB(unitNo){
   SES.tasks.splice(at,0,...ins);
 }
 function renderUnitDone(unitNo,box){
-  addMinutes();S.meta.paused=null;save();
-  const a=S.meta.activeUnits.find(x=>x.unit===unitNo);if(a)a.day1=true;
+  addMinutes();
+  const a=S.meta.activeUnits.find(x=>x.unit===unitNo);
+  const doneSt=(a&&a.stagesDone)||[];
+  const full=doneSt.length>=5;
+  if(full){S.meta.paused=null;if(a)a.day1=true;}
   save();
   const u=PACK.units.find(x=>x.unit===unitNo);
   const errK=[...new Set(SES.errors.map(e=>e.k))];
@@ -818,7 +849,17 @@ function renderUnitDone(unitNo,box){
   box.appendChild(el('div','row','<div class="stat"><span class="n">'+SES.count+'</span><span class="l">заданий</span></div>'+
     '<div class="stat"><span class="n">'+acc+'%</span><span class="l">точность</span></div>'+
     '<div class="stat"><span class="n">'+errK.length+'</span><span class="l">слов с ошибками</span></div>'));
-  box.appendChild(el('div','small mut','Завтра пачку ждёт итоговый тест. Далее слова будут появляться в повторениях по нарастающим интервалам: 3 → 7 → 14 → 30 → 60 → 120 дней.'));
+  const names=['Знакомство','Узнавание','Блок 1','На слух','Блок 2'];
+  if(full){
+    box.appendChild(el('div','fb ok','Все 5 этапов пройдены. Завтра пачку ждёт итоговый тест, далее — повторения по нарастающим интервалам: 3 → 7 → 14 → 30 → 60 → 120 дней.'));
+  } else {
+    box.appendChild(el('div','fb warn','Пройдено этапов: '+doneSt.length+' из 5. Пачка считается завершённой после всех пяти.'));
+    const rowSt=el('div','row');
+    names.forEach((n,i)=>{if(!doneSt.includes(i+1)){
+      const b=el('button','btn small','К этапу: '+n);
+      b.onclick=()=>jumpToStage(i+1);rowSt.appendChild(b);}});
+    box.appendChild(rowSt);
+  }
   if(errK.length){box.appendChild(el('div','small','Слова с ошибками: '+errK.map(k=>'<b>'+esc(IT(k).head)+'</b>').join(', ')));}
   const r=el('div','row');
   if(errK.length){const again=el('button','btn','Повторить слова с ошибками');
@@ -902,7 +943,10 @@ function unitStatus(u){
   const sts=u.items.map(k=>ST(k).st);
   const a=S.meta.activeUnits.find(x=>x.unit===u.unit);
   if(sts.every(s=>s==='inbox'))return {code:'new',label:'не начата',btn:'Начать'};
-  if(sts.some(s=>s==='learning')&&(!a||!a.day1))return {code:'resume',label:'сессия не завершена',btn:'Продолжить'};
+  if(sts.some(s=>s==='learning')&&(!a||!a.day1)){
+    const n=(a&&a.stagesDone&&a.stagesDone.length)||0;
+    return {code:'resume',label:'этапы: '+n+' из 5',btn:'Продолжить',stageFrac:n/5};
+  }
   if(a&&a.day1&&!a.testDone)return {code:'test',label:'ждёт итоговый тест',btn:'Итоговый тест'};
   const done=sts.filter(s=>s==='mastered').length;
   if(sts.every(s=>['review','mastered','archive','problem'].includes(s)))
@@ -943,7 +987,8 @@ function viewToday(app){
     const pc=el('div','pack '+st.code);
     pc.appendChild(el('div','b','Пачка '+u.unit));
     pc.appendChild(el('div','small mut',esc(u.title)));
-    const bar=el('div','pbar');bar.appendChild(el('div'));bar.firstChild.style.width=(done/u.items.length*100)+'%';pc.appendChild(bar);
+    const frac=st.stageFrac!=null?st.stageFrac:(done/u.items.length);
+    const bar=el('div','pbar');bar.appendChild(el('div'));bar.firstChild.style.width=(frac*100)+'%';pc.appendChild(bar);
     pc.appendChild(el('div','small mut',st.label));
     if(st.btn){const b=el('button','btn small'+(st.code==='new'?' pri':''),st.btn);
       b.onclick=()=>{if(st.code==='test'){SES={tasks:[{kind:'story',unit:u.unit}],i:0,errors:[],t0:Date.now(),count:0,okc:0};showSession();}
