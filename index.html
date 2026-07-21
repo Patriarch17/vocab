@@ -1141,7 +1141,9 @@ function wordModal(k){
     it.assoc.forEach(a=>ab.appendChild(el('div','assocLine','· '+esc(a))));
     c.appendChild(ab);
   }
-  it.examples.slice(0,6).forEach((ex,i)=>{const e2=el('div','card');
+  /* holdout-предложение скрыто до письменного экзамена (ступень 4+) */
+  const hideHold=it.holdout!=null&&(ST(k).step||0)<4;
+  it.examples.map((ex,i)=>({ex,i})).filter(o=>!(hideHold&&o.i===it.holdout)).slice(0,6).forEach(({ex,i})=>{const e2=el('div','card');
     e2.appendChild(el('div','sentence small',esc(ex.en)+(isMulti(k)&&ex.sense===1?'<span class="senseTag">знач. 2</span>':'')));
     e2.appendChild(el('div','mut small',esc(ex.ru)));e2.appendChild(soundBtn(k,i,ex.en));c.appendChild(e2);});
   const acts=el('div','row');
