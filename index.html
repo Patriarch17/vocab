@@ -1033,7 +1033,7 @@ function viewToday(app){
   /* шапка */
   const c=el('div','card');
   c.appendChild(el('div','hero-title','Vocab Trainer'));
-  c.appendChild(el('div','mut small','488 слов и выражений · 24 пачки · интервальные повторения'));
+  c.appendChild(el('div','mut small',Object.keys(PACK.items).length+' слов и выражений · '+PACK.units.length+' пачек · интервальные повторения'));
   c.appendChild(el('div','statrow',
    '<div class="stat"><span class="n">'+due+'</span><span class="l">повторений в очереди</span></div>'+
    '<div class="stat"><span class="n">'+day(d).done+'</span><span class="l">заданий сделано</span></div>'+
